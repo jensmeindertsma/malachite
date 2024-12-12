@@ -29,7 +29,7 @@ We have just a pair of ports available:
 - 22 running SSH
 - 80 running Apache
 
-If we open `http://10.10.11.44` in our browser, we'll be met with a "Page Not Found". Just as we can read in the `nmap` report, the Apache server issues a redirect to `alert.htb`. To make this work in our browser, we'll need to modify the `/etc/hosts` file. This is where the browser comes to "resolve" a hostname to an IP address before heading to the nearest DNS server if it ends up empty handed:
+We usually need a form of credentials to get access to the machine through SSH, so we'll start with the Apache server on port 80. If we open `http://10.10.11.44` in our browser, we'll be met with a "Page Not Found". Just as we can read in the `nmap` report, the Apache server issues a redirect to `alert.htb`. To make this work in our browser, we'll need to modify the `/etc/hosts` file. This is where the browser comes to "resolve" a hostname to an IP address before heading to the nearest DNS server if it ends up empty handed:
 
 ```
 127.0.0.1       localhost
@@ -43,11 +43,11 @@ ff02::2 ip6-allrouters
 10.10.11.44 alert.htb
 ```
 
-Now we should be able to visit the page in our browser:
+Now that the browser is able to "resolve" the hostname `alert.htb` to an IP address, we should be able to visit the page in our browser:
 
 ![A page where you can upload markdown files](./images/viewer-browse-files.png)
 
-Let's summarize what we have here:
+Let's summarize what we have here, on top of the "Markdown Viewer" page shown above:
 
 - About Us
   ![The "About Us" page](./images/about-us.png)
@@ -56,15 +56,49 @@ Let's summarize what we have here:
 - Donate
   ![The "Donate" page](./images//donate.png)
 
-All of these pages are using a `?page=` query parameter to specify the page to load. This might be vulnerable to a file inclusion attack. I tried values like `../../../etc/passwd` but it doesn't seem to work.
+Note that all of these pages are using a `?page=` query parameter to specify the page to load. This might be vulnerable to a file inclusion attack. We can try this by attempting to include the `/etc/passwd` file:
 
-The donate page has a single "number" input but it doesn't seem to do anything. But when you enter a email address and some text into the "Contact Us" form, the URL changes to `http://alert.htb/index.php?page=contact&status=Message%20sent%20successfully!`. A new query parameter `status` is added, which also appears on the page:
+```
+$ curl http://alert.htb/index.php?page=../../../../etc/passwd
 
-![the status messsage on the contact page after submitting the form](./images/a-new-status-appears.png)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css">
+    <title>Alert - Markdown Viewer</title>
+</head>
+<body>
+    <nav>
+        <a href="index.php?page=alert">Markdown Viewer</a>
+        <a href="index.php?page=contact">Contact Us</a>
+        <a href="index.php?page=about">About Us</a>
+        <a href="index.php?page=donate">Donate</a>
+            </nav>
+    <div class="container">
+        <h1>Error: Page not found</h1>    </div>
+    <footer>
+        <p style="color: black;">© 2024 Alert. All rights reserved.</p>
+    </footer>
+</body>
+</html>
+```
 
-We can modify this and it also changes on the page:
+That doesn't work, it just gives us back a "Page not found". Let's move on. We can quickly eliminate the "Donate" page from our list as the number input on that page does not seem to do anything. Let's try to upload some (nasty) Markdown file:
 
-![modifying the parameter](./images/editing-the-status.png)
+```
+$ cat hello.md
+
+# HELLO WORLD
+<script>
+alert("HEY!")
+</script>
+```
+
+When we upload this, we can see that the script is definitely being executed:
+
+![TODO](TODO)
 
 ## More (hidden) pages
 
