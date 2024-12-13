@@ -403,7 +403,7 @@ albert@alert:~$ ls
 user.txt
 
 albert@alert:~$ cat user.txt
-b14e173fe3b87a5a085d470f9c5ee0c4
+b14e173fe3b************
 ```
 
 ## Pivoting now
@@ -524,5 +524,5 @@ root.txt
 scripts
 
 root@alert:~# cat root.txt
-6056a4010343f5134f007f6fbfaf6186
+6056a4010****************
 ```

@@ -448,12 +448,12 @@ root@lame:/home/makis# ls
 user.txt
 
 root@lame:/home/makis# cat user.txt
-6a1abab17b9b3cdfdf22364e4db95b85
+6a1abab17b9****************
 
 root@lame:/home/makis# cd /root
 
 root@lame:/root# cat root.txt
-81d0f4a72f55e73718ccb82e8ebc7d0c
+81d0f4a72f****************
 ```
 
 And that wraps up my first post! Thank you so much for reading, and see you next time!
